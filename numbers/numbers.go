@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"sort"
 	"sync"
@@ -35,7 +36,9 @@ func OrderHandler(w http.ResponseWriter, r *http.Request) {
 	nums := make([]int, 0)
 	select {
 	case <-ctx.Done():
+		log.Println("too long to respond")
 	case nums = <-intChan:
+		log.Println(nums)
 	}
 	if err := json.NewEncoder(w).Encode(Nums{nums}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -44,20 +47,24 @@ func OrderHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseURL fetch data
-func parseURL(ctx context.Context, wg *sync.WaitGroup, url string, intChan chan []int) {
+func parseURL(ctx context.Context, wg *sync.WaitGroup, url string, intChan chan<- []int) {
+	defer wg.Done()
 	resp, err := http.Get(url)
 	if err != nil {
+		log.Println(err)
 		return
 	}
 	var body []byte
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
+		log.Println(err)
 		return
 	}
 	if resp.StatusCode == http.StatusOK {
 		ints := Nums{}
 		err = json.Unmarshal(body, &ints)
 		if err != nil {
+			log.Println(err)
 			return
 		}
 		intChan <- ints.Numbers
