@@ -30,19 +30,15 @@ func OrderHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, errMissingParam.Error(), http.StatusBadRequest)
 		return
 	}
-	intChan := make(chan []int)
-	go exec(ctx, urls, intChan)
-	w.Header().Set("Content-Type", "application/json")
 	nums := make([]int, 0)
-	select {
-	case <-ctx.Done():
-		log.Println("too long to respond")
-	case nums = <-intChan:
-		log.Println(nums)
-	}
+	go func() {
+		nums = exec(ctx, urls)
+		cancel()
+	}()
+	<-ctx.Done()
+	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(Nums{nums}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -54,6 +50,7 @@ func parseURL(ctx context.Context, wg *sync.WaitGroup, url string, intChan chan<
 		log.Println(err)
 		return
 	}
+	defer resp.Body.Close() //nolint
 	var body []byte
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -72,7 +69,7 @@ func parseURL(ctx context.Context, wg *sync.WaitGroup, url string, intChan chan<
 }
 
 // exec sort
-func exec(ctx context.Context, urls []string, intChan chan []int) {
+func exec(ctx context.Context, urls []string) []int {
 	internalChan := make(chan []int)
 	nums := make([]int, 0)
 	wg := &sync.WaitGroup{}
@@ -80,16 +77,21 @@ func exec(ctx context.Context, urls []string, intChan chan []int) {
 		wg.Add(1)
 		go parseURL(ctx, wg, url, internalChan)
 	}
+	wgRead := &sync.WaitGroup{}
+	wgRead.Add(1)
 	go func(ctx context.Context) {
+		defer wgRead.Done()
 		for resp := range internalChan {
 			nums = append(nums, resp...)
 		}
-		sort.Ints(nums)
-		nums = removeDuplicates(nums)
-		intChan <- nums
+
 	}(ctx)
 	wg.Wait()
 	close(internalChan)
+	wgRead.Wait()
+	nums = removeDuplicates(nums)
+	sort.Ints(nums)
+	return nums
 }
 
 // removeDuplicates entries

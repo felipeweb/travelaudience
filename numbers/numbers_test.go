@@ -32,38 +32,6 @@ func Test_removeDuplicates(t *testing.T) {
 	}
 }
 
-func Test_exec(t *testing.T) {
-	type args struct {
-		ctx     context.Context
-		urls    []string
-		intChan chan []int
-	}
-	tests := []struct {
-		name    string
-		args    args
-		empty   bool
-		lenZero bool
-	}{
-		{"test exec url with resp", args{context.Background(), []string{"%s/fibo"}, make(chan []int)}, false, false},
-		{"test exec url without resp", args{context.Background(), []string{"%s/fibo"}, make(chan []int)}, true, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(fakeapi.Mux(tt.empty))
-			defer server.Close()
-			urls := make([]string, 0)
-			for _, url := range tt.args.urls {
-				urls = append(urls, fmt.Sprintf(url, server.URL))
-			}
-			exec(tt.args.ctx, urls, tt.args.intChan)
-			ints := <-tt.args.intChan
-			if (len(ints) == 0) != tt.lenZero {
-				t.Errorf("exec() = %v, want %v", len(ints), tt.lenZero)
-			}
-		})
-	}
-}
-
 func TestOrderHandler(t *testing.T) {
 	type args struct {
 		w   *httptest.ResponseRecorder
@@ -91,6 +59,34 @@ func TestOrderHandler(t *testing.T) {
 			resp := tt.args.w.Result()
 			if resp.StatusCode != tt.statusCode {
 				t.Errorf("OrderHandler() = %v, but got %v", tt.statusCode, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func Test_exec(t *testing.T) {
+	type args struct {
+		ctx  context.Context
+		urls []string
+	}
+	tests := []struct {
+		name  string
+		args  args
+		empty bool
+		want  []int
+	}{
+		{"with numbers", args{context.Background(), []string{"%s/fibo"}}, false, []int{1, 2, 3, 5, 8, 13, 21}},
+		{"empty", args{context.Background(), []string{"%s/fibo"}}, true, []int{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(fakeapi.Mux(tt.empty))
+			defer server.Close()
+			for i := range tt.args.urls {
+				tt.args.urls[i] = fmt.Sprintf(tt.args.urls[i], server.URL)
+			}
+			if got := exec(tt.args.ctx, tt.args.urls); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("exec() = %v, want %v", got, tt.want)
 			}
 		})
 	}
